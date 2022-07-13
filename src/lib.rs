@@ -1,18 +1,17 @@
-use std::rc::Rc;
-
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag, take_while},
     character::{
-        complete::{alphanumeric1, char, multispace1, none_of},
+        complete::{alphanumeric1, char, multispace1},
         streaming::digit1,
     },
-    combinator::{map, map_res, opt},
+    combinator::{map, map_res},
     multi::separated_list0,
     number::complete::double,
-    sequence::{delimited, pair, separated_pair},
+    sequence::{delimited, pair, separated_pair, terminated},
     IResult,
 };
+use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StepFile {
@@ -135,15 +134,12 @@ pub enum OccurrenceName {
     ValueInstanceName(u64),
 }
 
-fn ifc_data_list(input: &str) -> IResult<&str, Vec<Entity>> {
+pub fn ifc_data_list(input: &str) -> IResult<&str, Vec<Entity>> {
     separated_list0(multispace1, ifc_entity_terminated)(input)
-    // let (input, (entity, _)) = pair(ifc_entity_ided, char(';'))(input)?;
-    // Ok((input, entity))
 }
 
 fn ifc_entity_terminated(input: &str) -> IResult<&str, Entity> {
-    let (input, (entity, _)) = pair(ifc_entity_ided, char(';'))(input)?;
-    Ok((input, entity))
+    terminated(ifc_entity_ided, char(';'))(input)
 }
 
 fn ifc_entity_ided(input: &str) -> IResult<&str, Entity> {
@@ -211,8 +207,7 @@ fn ifc_typed_parameter(input: &str) -> IResult<&str, TypedParameter> {
 
 fn ifc_parameter_list_p(input: &str) -> IResult<&str, Parameter> {
     let (i, list) = ifc_parameter_list(input)?;
-    // TODO: stop cheating with an empty list
-    Ok((i, Parameter::List(vec![])))
+    Ok((i, Parameter::List(list)))
 }
 
 fn ifc_parameter_list_inner(input: &str) -> IResult<&str, Vec<Parameter>> {
@@ -484,9 +479,11 @@ mod tests {
                     Parameter::Omitted,
                     Parameter::TypedParameter(TypedParameter {
                         type_: "IFCLABEL".to_string(),
-                        value: Rc::new(Parameter::UntypedParameter(UntypedParameter::SimpleParameter(
-                            SimpleParameter::String("Basic Wall:Interior - Partition (92mm Stud)".to_string())
-                        ))),
+                        value: Rc::new(Parameter::UntypedParameter(
+                            UntypedParameter::SimpleParameter(SimpleParameter::String(
+                                "Basic Wall:Interior - Partition (92mm Stud)".to_string()
+                            ))
+                        )),
                     }),
                     Parameter::Omitted,
                 ]
