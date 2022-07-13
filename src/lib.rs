@@ -174,7 +174,11 @@ fn ifc_entity_terminated(input: &str) -> IResult<&str, Entity> {
 }
 
 fn ifc_entity_ided(input: &str) -> IResult<&str, Entity> {
-    let (input, (id, (name, entity))) = separated_pair(ifc_id, tag("="), ifc_entity)(input)?;
+    let (input, (id, (name, entity))) = separated_pair(
+        ifc_id,
+        delimited(multispace0, tag("="), multispace0),
+        ifc_entity,
+    )(input)?;
     let entity = Entity {
         id,
         name: name.to_string(),
@@ -328,7 +332,7 @@ mod tests {
     fn parse_ifc_data_list() {
         assert_eq!(
             ifc_data_list(
-                "#1=IFCORGANIZATION($,'Autodesk Revit Architecture 2011',$,$,$);\n\n#2=IFCAPPLICATION(#1,'2011','Autodesk Revit Architecture 2011','Revit');"
+                "#1= IFCORGANIZATION($,'Autodesk Revit Architecture 2011',$,$,$);\n\n#2=IFCAPPLICATION(#1,'2011','Autodesk Revit Architecture 2011','Revit');"
             ),
             Ok((
                 "",
