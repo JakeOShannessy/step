@@ -129,12 +129,13 @@ pub enum OccurrenceName {
     ValueInstanceName(u64),
 }
 
-pub fn ifc_file(input: &str) -> IResult<&str, (Vec<(&str, Vec<Parameter>)>, Vec<Entity>)> {
-    delimited(
+pub fn ifc_file(input: &str) -> IResult<&str, (Vec<(&str, Vec<Parameter>)>, Data)> {
+    let (i, (headers, entities)) = delimited(
         delimited(multispace0, tag("ISO-10303-21;"), multispace0),
         ifc_contents,
         delimited(multispace0, tag("END-ISO-10303-21;"), multispace0),
-    )(input)
+    )(input)?;
+    Ok((i, (headers, Data { entities })))
 }
 
 pub fn ifc_contents(input: &str) -> IResult<&str, (Vec<(&str, Vec<Parameter>)>, Vec<Entity>)> {
@@ -258,7 +259,10 @@ fn ifc_omitted(input: &str) -> IResult<&str, Parameter> {
 
 fn ifc_asterisk(input: &str) -> IResult<&str, Parameter> {
     let (i, _) = char('$')(input)?;
-    Ok((i, Parameter::UntypedParameter(UntypedParameter::NotProvided)))
+    Ok((
+        i,
+        Parameter::UntypedParameter(UntypedParameter::NotProvided),
+    ))
 }
 
 fn ifc_enum(input: &str) -> IResult<&str, Parameter> {
@@ -299,10 +303,10 @@ mod tests {
 
     #[test]
     fn count_doors() {
-        let (input, (_headers, entries)) = ifc_file(TEST_DATA).unwrap();
+        let (input, (_headers, data)) = ifc_file(TEST_DATA).unwrap();
         assert_eq!(input.trim(), "", "check that there is only whitespace left");
         let mut doors = vec![];
-        for entry in entries.iter() {
+        for entry in data.entities.iter() {
             if entry.name == "IFCDOOR" {
                 doors.push(entry.clone());
             }
@@ -312,12 +316,12 @@ mod tests {
 
     #[test]
     fn parse_ifc_data_list_many() {
-        let (input, (headers, entries)) = ifc_file(TEST_DATA).unwrap();
-        for entry in entries.iter() {
+        let (input, (_headers, data)) = ifc_file(TEST_DATA).unwrap();
+        for entry in data.entities.iter() {
             println!("{entry:?}");
         }
         println!("{input}");
-        assert_eq!(38898, entries.len());
+        assert_eq!(38898, data.entities.len());
     }
 
     #[test]
@@ -332,7 +336,11 @@ mod tests {
                      id: 1,
                      name: "IFCORGANIZATION".to_string(),
                      s: vec![
-                        Parameter::Omitted, Parameter::UntypedParameter(UntypedParameter::SimpleParameter(SimpleParameter::String("Autodesk Revit Architecture 2011".to_string()))), Parameter::Omitted, Parameter::Omitted, Parameter::Omitted
+                        Parameter::UntypedParameter(UntypedParameter::NotProvided),
+                        Parameter::UntypedParameter(UntypedParameter::SimpleParameter(SimpleParameter::String("Autodesk Revit Architecture 2011".to_string()))),
+                        Parameter::UntypedParameter(UntypedParameter::NotProvided),
+                        Parameter::UntypedParameter(UntypedParameter::NotProvided),
+                        Parameter::UntypedParameter(UntypedParameter::NotProvided),
                     ],
                 }
                 ,Entity{
@@ -530,15 +538,15 @@ mod tests {
             Ok((
                 "",
                 vec![
-                    Parameter::Omitted,
+                    Parameter::UntypedParameter(UntypedParameter::NotProvided),
                     Parameter::UntypedParameter(UntypedParameter::SimpleParameter(
                         SimpleParameter::String("".to_string())
                     )),
                     Parameter::UntypedParameter(UntypedParameter::SimpleParameter(
                         SimpleParameter::String("".to_string())
                     )),
-                    Parameter::Omitted,
-                    Parameter::Omitted,
+                    Parameter::UntypedParameter(UntypedParameter::NotProvided),
+                    Parameter::UntypedParameter(UntypedParameter::NotProvided),
                 ]
             ))
         );
@@ -552,7 +560,7 @@ mod tests {
                     Parameter::UntypedParameter(UntypedParameter::SimpleParameter(
                         SimpleParameter::String("Reference".to_string())
                     )),
-                    Parameter::Omitted,
+                    Parameter::UntypedParameter(UntypedParameter::NotProvided),
                     Parameter::TypedParameter(TypedParameter {
                         type_: "IFCLABEL".to_string(),
                         value: Rc::new(Parameter::UntypedParameter(
@@ -561,7 +569,7 @@ mod tests {
                             ))
                         )),
                     }),
-                    Parameter::Omitted,
+                    Parameter::UntypedParameter(UntypedParameter::NotProvided),
                 ]
             ))
         );
