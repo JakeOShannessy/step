@@ -2,14 +2,15 @@ use nom::{
     branch::alt,
     bytes::complete::{is_not, tag, take_while},
     character::{
-        complete::{alphanumeric1, char, multispace1},
+        complete::{char, multispace0, multispace1},
         streaming::digit1,
     },
     combinator::{map, map_res},
+    error::{ErrorKind, ParseError},
     multi::separated_list0,
     number::complete::double,
     sequence::{delimited, pair, separated_pair, terminated},
-    IResult,
+    AsChar, IResult, InputTakeAtPosition,
 };
 use std::rc::Rc;
 
@@ -96,13 +97,7 @@ pub enum Parameter {
     TypedParameter(TypedParameter),
     UntypedParameter(UntypedParameter),
     Omitted,
-    // SimpleParameter(SimpleParameter),
-    Asterisk,
-    List(Vec<Parameter>),
 }
-
-// PARAMETER          = TYPED_PARAMETER  |
-//                      UNTYPED_PARAMETER | OMITTED_PARAMETER  .
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UntypedParameter {
@@ -134,8 +129,43 @@ pub enum OccurrenceName {
     ValueInstanceName(u64),
 }
 
+pub fn ifc_file(input: &str) -> IResult<&str, (Vec<(&str, Vec<Parameter>)>, Vec<Entity>)> {
+    delimited(
+        delimited(multispace0, tag("ISO-10303-21;"), multispace0),
+        ifc_contents,
+        delimited(multispace0, tag("END-ISO-10303-21;"), multispace0),
+    )(input)
+}
+
+pub fn ifc_contents(input: &str) -> IResult<&str, (Vec<(&str, Vec<Parameter>)>, Vec<Entity>)> {
+    pair(
+        delimited(multispace0, ifc_header_sec, multispace0),
+        delimited(multispace0, ifc_data_sec, multispace0),
+    )(input)
+}
+
+pub fn ifc_header_sec(input: &str) -> IResult<&str, Vec<(&str, Vec<Parameter>)>> {
+    delimited(
+        delimited(multispace0, tag("HEADER;"), multispace0),
+        ifc_header_list,
+        delimited(multispace0, tag("ENDSEC;"), multispace0),
+    )(input)
+}
+
+pub fn ifc_data_sec(input: &str) -> IResult<&str, Vec<Entity>> {
+    delimited(
+        delimited(multispace0, tag("DATA;"), multispace0),
+        ifc_data_list,
+        delimited(multispace0, tag("ENDSEC;"), multispace0),
+    )(input)
+}
+
 pub fn ifc_data_list(input: &str) -> IResult<&str, Vec<Entity>> {
     separated_list0(multispace1, ifc_entity_terminated)(input)
+}
+
+pub fn ifc_header_list(input: &str) -> IResult<&str, Vec<(&str, Vec<Parameter>)>> {
+    separated_list0(multispace1, terminated(ifc_entity, char(';')))(input)
 }
 
 fn ifc_entity_terminated(input: &str) -> IResult<&str, Entity> {
@@ -175,8 +205,15 @@ fn ifc_entity(input: &str) -> IResult<&str, (&str, Vec<Parameter>)> {
     pair(ifc_name, ifc_parameter_list)(input)
 }
 
-fn ifc_name(input: &str) -> IResult<&str, &str> {
-    alphanumeric1(input)
+pub fn ifc_name<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
+where
+    T: InputTakeAtPosition,
+    <T as InputTakeAtPosition>::Item: AsChar + Copy,
+{
+    input.split_at_position1_complete(
+        |item| !item.is_alphanum() && item.as_char() != '_',
+        ErrorKind::AlphaNumeric,
+    )
 }
 
 fn ifc_string(input: &str) -> IResult<&str, Parameter> {
@@ -207,7 +244,7 @@ fn ifc_typed_parameter(input: &str) -> IResult<&str, TypedParameter> {
 
 fn ifc_parameter_list_p(input: &str) -> IResult<&str, Parameter> {
     let (i, list) = ifc_parameter_list(input)?;
-    Ok((i, Parameter::List(list)))
+    Ok((i, Parameter::UntypedParameter(UntypedParameter::List(list))))
 }
 
 fn ifc_parameter_list_inner(input: &str) -> IResult<&str, Vec<Parameter>> {
@@ -221,7 +258,7 @@ fn ifc_dollar(input: &str) -> IResult<&str, Parameter> {
 
 fn ifc_asterisk(input: &str) -> IResult<&str, Parameter> {
     let (i, _) = char('*')(input)?;
-    Ok((i, Parameter::Asterisk))
+    Ok((i, Parameter::UntypedParameter(UntypedParameter::Asterisk)))
 }
 
 fn ifc_enum(input: &str) -> IResult<&str, Parameter> {
@@ -258,10 +295,24 @@ fn ifc_parameter(input: &str) -> IResult<&str, Parameter> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const TEST_DATA: &str = include_str!("test.ifc");
+
+    #[test]
+    fn count_doors() {
+        let (input, (_headers, entries)) = ifc_file(TEST_DATA).unwrap();
+        assert_eq!(input.trim(), "", "check that there is only whitespace left");
+        let mut doors = vec![];
+        for entry in entries.iter() {
+            if entry.name == "IFCDOOR" {
+                doors.push(entry.clone());
+            }
+        }
+        assert_eq!(14, doors.len());
+    }
 
     #[test]
     fn parse_ifc_data_list_many() {
-        let (input, entries) = ifc_data_list(include_str!("test_data.ifc")).unwrap();
+        let (input, (headers, entries)) = ifc_file(TEST_DATA).unwrap();
         for entry in entries.iter() {
             println!("{entry:?}");
         }
@@ -356,6 +407,31 @@ mod tests {
                         ))
                     ]
                 }
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_ifc_header_entity() {
+        assert_eq!(
+            ifc_entity("FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1')"),
+            Ok((
+                "",
+                (
+                    "FILE_DESCRIPTION",
+                    vec![
+                        Parameter::UntypedParameter(UntypedParameter::List(vec![
+                            Parameter::UntypedParameter(UntypedParameter::SimpleParameter(
+                                SimpleParameter::String(
+                                    "ViewDefinition [CoordinationView]".to_string()
+                                )
+                            ))
+                        ])),
+                        Parameter::UntypedParameter(UntypedParameter::SimpleParameter(
+                            SimpleParameter::String("2;1".to_string())
+                        ))
+                    ]
+                )
             ))
         );
     }
