@@ -102,7 +102,7 @@ pub enum Parameter {
 #[derive(Debug, Clone, PartialEq)]
 pub enum UntypedParameter {
     SimpleParameter(SimpleParameter),
-    Asterisk,
+    NotProvided,
     List(Vec<Parameter>),
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -251,14 +251,14 @@ fn ifc_parameter_list_inner(input: &str) -> IResult<&str, Vec<Parameter>> {
     separated_list0(char(','), ifc_parameter)(input)
 }
 
-fn ifc_dollar(input: &str) -> IResult<&str, Parameter> {
-    let (i, _) = char('$')(input)?;
+fn ifc_omitted(input: &str) -> IResult<&str, Parameter> {
+    let (i, _) = char('*')(input)?;
     Ok((i, Parameter::Omitted))
 }
 
 fn ifc_asterisk(input: &str) -> IResult<&str, Parameter> {
-    let (i, _) = char('*')(input)?;
-    Ok((i, Parameter::UntypedParameter(UntypedParameter::Asterisk)))
+    let (i, _) = char('$')(input)?;
+    Ok((i, Parameter::UntypedParameter(UntypedParameter::NotProvided)))
 }
 
 fn ifc_enum(input: &str) -> IResult<&str, Parameter> {
@@ -282,7 +282,7 @@ fn ifc_num(input: &str) -> IResult<&str, Parameter> {
 fn ifc_parameter(input: &str) -> IResult<&str, Parameter> {
     alt((
         ifc_string,
-        ifc_dollar,
+        ifc_omitted,
         ifc_asterisk,
         ifc_enum,
         ifc_num,
