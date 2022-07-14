@@ -22,12 +22,13 @@ pub struct StepFile {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Header {
-    pub file_description: FileDescription,
-    pub file_name: FileName,
-    pub file_schema: FileSchema,
-    pub file_population: Option<FilePopulation>,
-    pub section_language: Option<SectionLanguage>,
-    pub section_context: Option<SectionContext>,
+    // pub file_description: FileDescription,
+    // pub file_name: FileName,
+    // pub file_schema: FileSchema,
+    // pub file_population: Option<FilePopulation>,
+    // pub section_language: Option<SectionLanguage>,
+    // pub section_context: Option<SectionContext>,
+    pub headers: Vec<(String, Vec<Parameter>)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,36 +130,46 @@ pub enum OccurrenceName {
     ValueInstanceName(u64),
 }
 
-pub fn ifc_file(input: &str) -> IResult<&str, (Vec<(&str, Vec<Parameter>)>, Data)> {
-    let (i, (headers, entities)) = delimited(
+pub fn ifc_file(input: &str) -> IResult<&str, StepFile> {
+    let (i, (header, data)) = delimited(
         delimited(multispace0, tag("ISO-10303-21;"), multispace0),
         ifc_contents,
         delimited(multispace0, tag("END-ISO-10303-21;"), multispace0),
     )(input)?;
-    Ok((i, (headers, Data { entities })))
+    let step_file = StepFile { header, data };
+    Ok((i, step_file))
 }
 
-pub fn ifc_contents(input: &str) -> IResult<&str, (Vec<(&str, Vec<Parameter>)>, Vec<Entity>)> {
+pub fn ifc_contents(input: &str) -> IResult<&str, (Header, Data)> {
     pair(
         delimited(multispace0, ifc_header_sec, multispace0),
         delimited(multispace0, ifc_data_sec, multispace0),
     )(input)
 }
 
-pub fn ifc_header_sec(input: &str) -> IResult<&str, Vec<(&str, Vec<Parameter>)>> {
-    delimited(
+pub fn ifc_header_sec(input: &str) -> IResult<&str, Header> {
+    let (i, headers) = delimited(
         delimited(multispace0, tag("HEADER;"), multispace0),
         ifc_header_list,
         delimited(multispace0, tag("ENDSEC;"), multispace0),
-    )(input)
+    )(input)?;
+    let header = Header {
+        headers: headers
+            .into_iter()
+            .map(|(name, params)| (name.to_string(), params))
+            .collect(),
+    };
+    Ok((i, header))
 }
 
-pub fn ifc_data_sec(input: &str) -> IResult<&str, Vec<Entity>> {
-    delimited(
+pub fn ifc_data_sec(input: &str) -> IResult<&str, Data> {
+    let (i, entities) = delimited(
         delimited(multispace0, tag("DATA;"), multispace0),
         ifc_data_list,
         delimited(multispace0, tag("ENDSEC;"), multispace0),
-    )(input)
+    )(input)?;
+    let data = Data { entities };
+    Ok((i, data))
 }
 
 pub fn ifc_data_list(input: &str) -> IResult<&str, Vec<Entity>> {
@@ -307,10 +318,10 @@ mod tests {
 
     #[test]
     fn count_doors() {
-        let (input, (_headers, data)) = ifc_file(TEST_DATA).unwrap();
+        let (input, ifc) = ifc_file(TEST_DATA).unwrap();
         assert_eq!(input.trim(), "", "check that there is only whitespace left");
         let mut doors = vec![];
-        for entry in data.entities.iter() {
+        for entry in ifc.data.entities.iter() {
             if entry.name == "IFCDOOR" {
                 doors.push(entry.clone());
             }
@@ -320,12 +331,12 @@ mod tests {
 
     #[test]
     fn parse_ifc_data_list_many() {
-        let (input, (_headers, data)) = ifc_file(TEST_DATA).unwrap();
-        for entry in data.entities.iter() {
+        let (input, ifc) = ifc_file(TEST_DATA).unwrap();
+        for entry in ifc.data.entities.iter() {
             println!("{entry:?}");
         }
         println!("{input}");
-        assert_eq!(38898, data.entities.len());
+        assert_eq!(38898, ifc.data.entities.len());
     }
 
     #[test]
